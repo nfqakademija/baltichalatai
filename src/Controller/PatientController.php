@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Entity\UserVisit;
 use App\Services\PatientServices;
+use App\Services\UserAuthService;
 use App\Services\UserVisitService;
 use Knp\Component\Pager\PaginatorInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -27,14 +28,24 @@ class PatientController extends AbstractController
      * @var FlashBagInterface
      */
     private $bag;
+    /**
+     * @var UserAuthService
+     */
+    private $userAuthService;
 
     /**
      * PatientController constructor.
      * @param PatientServices $patientServices
+     * @param UserAuthService $userAuthService
+     * @param FlashBagInterface $bag
      */
-    public function __construct(PatientServices $patientServices, FlashBagInterface $bag)
-    {
+    public function __construct(
+        PatientServices $patientServices,
+        UserAuthService $userAuthService,
+        FlashBagInterface $bag
+    ) {
         $this->patientServices = $patientServices;
+        $this->userAuthService = $userAuthService;
         $this->bag = $bag;
     }
 
@@ -65,32 +76,31 @@ class PatientController extends AbstractController
         Request $request,
         UserInterface $user = null
     ) {
+        if (!$this->userAuthService->isPatient($user)) {
+            return new RedirectResponse($urlGenerator->generate('app_login'));
+        }
         if (is_bool($user->getUserInfo()->first())) {
-            $this->bag->add('error', 'Prašomė užpildyti asmeninę informaciją');
+            $this->bag->add('error', 'Prašome užpildyti asmeninę informaciją');
             return new RedirectResponse($urlGenerator->generate('userinfo_edit'));
         }
-        if ($user instanceof User && $user->getRole() == 1) {
-            $queryBuilder = $this->getDoctrine()->getRepository(UserVisit::class)
-                ->getWithPatientIdCompletedQueryBuilder($user->getId());
+        $queryBuilder = $this->getDoctrine()->getRepository(UserVisit::class)
+            ->getWithPatientIdCompletedQueryBuilder($user->getId());
 
-            $pagination = $paginator->paginate(
-                $queryBuilder,
-                $request->query->getInt('page', 1),
-                5
-            );
+        $pagination = $paginator->paginate(
+            $queryBuilder,
+            $request->query->getInt('page', 1),
+            5
+        );
 
-            $upcomingVisits = $this->getDoctrine()->getRepository(UserVisit::class)
-                ->findByPatientIdNotCompleted($user->getId());
+        $upcomingVisits = $this->getDoctrine()->getRepository(UserVisit::class)
+            ->findByPatientIdNotCompleted($user->getId());
 
-            return $this->render('patient/home.html.twig', [
-                'upcomingVisits' => $upcomingVisits,
-                'pastVisits' => $pagination,
-                'userInfo' => $user->getUserInfo()->first(),
-                'clientRecipes' => $this->patientServices->getClientRecipes($user),
-                'clientSendings' => $this->patientServices->getClientSendingsToDoctor($user),
-            ]);
-        }
-
-        return new RedirectResponse($urlGenerator->generate('app_login'));
+        return $this->render('patient/home.html.twig', [
+            'upcomingVisits' => $upcomingVisits,
+            'pastVisits' => $pagination,
+            'userInfo' => $user->getUserInfo()->first(),
+            'clientRecipes' => $this->patientServices->getClientRecipes($user),
+            'clientSendings' => $this->patientServices->getClientSendingsToDoctor($user),
+        ]);
     }
 }

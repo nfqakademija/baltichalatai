@@ -7,6 +7,7 @@ use App\Entity\UserInfo;
 use App\Entity\UserVisit;
 use App\Form\ClinicInfoType;
 use App\Form\UserInfoType;
+use App\Services\UserAuthService;
 use App\Services\UserInfoService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -31,15 +32,24 @@ class ClinicController extends AbstractController
      * @var ClinicInfoService
      */
     private $clinicInfoService;
+    /**
+     * @var UserAuthService
+     */
+    private $userAuthService;
 
     /**
      * ClinicController constructor.
      * @param ClinicInfoService $clinicInfoService
+     * @param UserAuthService $userAuthService
      * @param FlashBagInterface $bag
      */
-    public function __construct(ClinicInfoService $clinicInfoService, FlashBagInterface $bag)
-    {
+    public function __construct(
+        ClinicInfoService $clinicInfoService,
+        UserAuthService $userAuthService,
+        FlashBagInterface $bag
+    ) {
         $this->clinicInfoService = $clinicInfoService;
+        $this->userAuthService = $userAuthService;
         $this->bag = $bag;
     }
 
@@ -51,21 +61,22 @@ class ClinicController extends AbstractController
      */
     public function index(UrlGeneratorInterface $urlGenerator, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 3) {
-            if ($user->getClinicInfo() == null) {
-                return new RedirectResponse($urlGenerator->generate('clinic_edit'));
-            }
-            return $this->render('clinic/home.html.twig', [
-                'clinicInfo' => $user->getClinicInfo(),
-            ]);
+        if (!$this->userAuthService->isClinic($user)) {
+            throw $this->createAccessDeniedException('Turite būti prisijungęs');
         }
-        throw $this->createNotFoundException();
+        if ($user->getClinicInfo() == null) {
+            $this->bag->add('error', 'Prašome užpildyti informaciją apie jūsų įstaigą.');
+            return new RedirectResponse($urlGenerator->generate('clinic_edit'));
+        }
+        return $this->render('clinic/home.html.twig', [
+            'clinicInfo' => $user->getClinicInfo(),
+        ]);
     }
 
     /**
      * @Route("/clinic/show/{id}", name="clinic_show")
      * @param $id
-     * @return \Symfony\Component\HttpFoundation\Response
+     * @return Response
      */
     public function show($id)
     {
@@ -81,40 +92,42 @@ class ClinicController extends AbstractController
 
     /**
      * @Route("/clinic/edit", name="clinic_edit")
+     * @param Request $request
+     * @param UrlGeneratorInterface $urlGenerator
+     * @param UserInterface|null $user
      * @return Response
      */
     public function edit(Request $request, UrlGeneratorInterface $urlGenerator, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 3) {
-            $clinicInfo = $user->getClinicInfo();
-            if (is_null($clinicInfo)) {
-                $clinicInfo = new ClinicInfo();
-            }
-            $form = $this->createForm(ClinicInfoType::class, $clinicInfo, [
-                'action' => $this->generateUrl('clinic_edit')
-            ]);
-
-            //Handle the request
-            $form->handleRequest($request);
-
-            if ($form->isSubmitted() && $form->isValid() &&
-                $this->clinicInfoService->validateClinicInfoForm($request->request->get('clinic_info')) == "") {
-                $clinicInfo->setUserId($user);
-                $em = $this->getDoctrine()->getManager();
-
-                $em->persist($clinicInfo);
-                $em->flush();
-
-                $this->bag->add('success', 'Jūsų informacija buvo išsaugota.');
-
-                return new RedirectResponse($urlGenerator->generate('clinic'));
-            } else {
-                return $this->render('clinic/edit.html.twig', [
-                    'clinic_info_form' => $form->createView(),
-                ]);
-            }
+        if (!$this->userAuthService->isClinic($user)) {
+            throw $this->createAccessDeniedException('Turite būti prisijungęs');
         }
+        $clinicInfo = $user->getClinicInfo();
+        if (is_null($clinicInfo)) {
+            $clinicInfo = new ClinicInfo();
+        }
+        $form = $this->createForm(ClinicInfoType::class, $clinicInfo, [
+            'action' => $this->generateUrl('clinic_edit')
+        ]);
 
-        throw $this->createNotFoundException();
+        //Handle the request
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid() &&
+            $this->clinicInfoService->validateClinicInfoForm($request->request->get('clinic_info')) == "") {
+            $clinicInfo->setUserId($user);
+            $em = $this->getDoctrine()->getManager();
+
+            $em->persist($clinicInfo);
+            $em->flush();
+
+            $this->bag->add('success', 'Jūsų informacija buvo išsaugota.');
+
+            return new RedirectResponse($urlGenerator->generate('clinic'));
+        } else {
+            return $this->render('clinic/edit.html.twig', [
+                'clinic_info_form' => $form->createView(),
+            ]);
+        }
     }
 }

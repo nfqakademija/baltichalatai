@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\ClinicSpecialists;
 use App\Services\ClinicSpecialistService;
 use App\Services\SpecialistService;
+use App\Services\UserAuthService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\Routing\Annotation\Route;
@@ -24,11 +25,25 @@ class ClinicSpecialistController extends AbstractController
      * @var SpecialistService
      */
     private $specialistService;
+    /**
+     * @var UserAuthService
+     */
+    private $userAuthService;
 
-    public function __construct(ClinicSpecialistService $clinicSpecialistService, SpecialistService $specialistService)
-    {
+    /**
+     * ClinicSpecialistController constructor.
+     * @param ClinicSpecialistService $clinicSpecialistService
+     * @param SpecialistService $specialistService
+     * @param UserAuthService $userAuthService
+     */
+    public function __construct(
+        ClinicSpecialistService $clinicSpecialistService,
+        SpecialistService $specialistService,
+        UserAuthService $userAuthService
+    ) {
         $this->clinicSpecialistService = $clinicSpecialistService;
         $this->specialistService = $specialistService;
+        $this->userAuthService = $userAuthService;
     }
 
     /**
@@ -40,7 +55,7 @@ class ClinicSpecialistController extends AbstractController
      */
     public function add(UrlGeneratorInterface $urlGenerator, User $specialist, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 3) {
+        if ($this->userAuthService->isClinic($user)) {
             $this->clinicSpecialistService->addSpecialist($user, $specialist);
         }
         return new RedirectResponse($urlGenerator->generate('specialist_show', ['id' => $specialist->getId()]));
@@ -55,7 +70,7 @@ class ClinicSpecialistController extends AbstractController
      */
     public function remove(UrlGeneratorInterface $urlGenerator, User $specialist, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 3) {
+        if ($this->userAuthService->isClinic($user)) {
             $em = $this->getDoctrine()->getManager();
             $this->specialistService->removeSpecialistWorkHours($specialist, $user);
             $clinicSpecialists = $em->getRepository(ClinicSpecialists::class)
@@ -72,7 +87,7 @@ class ClinicSpecialistController extends AbstractController
      */
     public function assignSpecialistToNoClinic(UrlGeneratorInterface $urlGenerator, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 2) {
+        if ($this->userAuthService->isSpecialist($user)) {
             $clinic = $this->clinicSpecialistService->getNoClinic();
             $clinicSpecialist = new ClinicSpecialists();
             $clinicSpecialist->setClinicId($clinic[0]);

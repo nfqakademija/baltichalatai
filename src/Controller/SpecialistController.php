@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\SpecialistWorkHours;
 use App\Services\SpecialistService;
+use App\Services\UserAuthService;
 use App\Services\UserSpecialtyService;
 use App\Entity\UserVisit;
 use DateTime;
@@ -37,14 +38,20 @@ class SpecialistController extends AbstractController
      * @var FlashBagInterface
      */
     private $bag;
+    /**
+     * @var UserAuthService
+     */
+    private $userAuthService;
 
     public function __construct(
         SpecialistService $specialistService,
         UserSpecialtyService $userSpecialtyService,
+        UserAuthService $userAuthService,
         FlashBagInterface $bag
     ) {
         $this->specialistService = $specialistService;
         $this->userSpecialtyService = $userSpecialtyService;
+        $this->userAuthService = $userAuthService;
         $this->bag = $bag;
     }
 
@@ -62,33 +69,32 @@ class SpecialistController extends AbstractController
         Request $request,
         UserInterface $user = null
     ) {
-        if ($user instanceof User && $user->getRole() == 2) {
-            if (is_bool($user->getUserInfo()->first())) {
-                return new RedirectResponse($urlGenerator->generate('userinfo_edit'));
-            }
-
-            $workHours = $this->specialistService->getSpecialistWorkHours($user);
-
-            $queryBuilder = $this->getDoctrine()->getRepository(UserVisit::class)
-                ->getWithSpecialistIdQueryBuilder($user->getId());
-
-            $pagination = $paginator->paginate(
-                $queryBuilder,
-                $request->query->getInt('page', 1),
-                5
-            );
-
-            $specClinics = $this->specialistService->getSpecialistClinics($user->getId());
-
-            return $this->render('specialist/home.html.twig', [
-                'userInfo' => $user->getUserInfo()->first(),
-                'visits' => $pagination,
-                'workDayList' => $this->specialistService->getWorkdayList(),
-                'specClinics' => $specClinics,
-                'workHours' => $workHours,
-            ]);
+        if (!$this->userAuthService->isSpecialist($user)) {
+            throw $this->createNotFoundException();
         }
-        throw $this->createNotFoundException();
+        if (is_bool($user->getUserInfo()->first())) {
+            return new RedirectResponse($urlGenerator->generate('userinfo_edit'));
+        }
+
+        $workHours = $this->specialistService->getSpecialistWorkHours($user);
+
+        $queryBuilder = $this->getDoctrine()->getRepository(UserVisit::class)
+            ->getWithSpecialistIdQueryBuilder($user->getId());
+
+        $pagination = $paginator->paginate(
+            $queryBuilder,
+            $request->query->getInt('page', 1),
+            5
+        );
+
+        $specClinics = $this->specialistService->getSpecialistClinics($user->getId());
+        return $this->render('specialist/home.html.twig', [
+            'userInfo' => $user->getUserInfo()->first(),
+            'visits' => $pagination,
+            'workDayList' => $this->specialistService->getWorkdayList(),
+            'specClinics' => $specClinics,
+            'workHours' => $workHours,
+        ]);
     }
 
     /**
@@ -131,46 +137,36 @@ class SpecialistController extends AbstractController
      */
     public function editHours(Request $request, UrlGeneratorInterface $urlGenerator, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 2) {
-            if (!is_null($request->get('day'))) {
-                $manager = $this->getDoctrine()->getManager();
-
-                $clinic = $this->specialistService->getClinic($request->get('clinicId'));
-
-                $workHours = $this->specialistService->getWorkHours($user->getId(), $clinic[0]->getId());
-                foreach ($workHours as $workHour) { //ismetam visus laikus
-                    $manager->remove($workHour);
-                }
-                foreach ($request->get('day') as $key => $day) {
-                    //praskipinam jeigu nieko neideta, kad nesugeneruotu default laiku
-                    if ($day['startTime'] == "" || $day['endTime'] == "") {
-                        continue;
-                    }
-                    $workHours = new SpecialistWorkHours(); //sudedam naujus laikus
-                    $workHours->setClinicId($clinic[0]);
-                    $workHours->setSpecialistId($user);
-                    $workHours->setDay($key);
-                    $workHours->setStartTime(new DateTime($day['startTime']));
-                    $workHours->setEndTime(new DateTime($day['endTime']));
-
-                    $manager->persist($workHours);
-                }
-                $manager->flush();
-                $this->bag->add('success', 'Grafikas išsaugotas.');
-            }
-
-            return new RedirectResponse($urlGenerator->generate('specialist'));
-            /*$workHours = $this->specialistService->getSpecialistWorkHours($user);
-
-            $specClinics = $this->specialistService->getSpecialistClinics($user->getId());
-
-            return $this->render('specialist/hours_edit.html.twig', [
-                'workDayList' => $this->specialistService->getWorkdayList(),
-                'specClinics' => $specClinics,
-                'workHours' => $workHours,
-            ]);*/
+        if (!$this->userAuthService->isSpecialist($user)) {
+            throw $this->createNotFoundException('Puslapis nerastas');
         }
-        throw $this->createNotFoundException('Puslapis nerastas');
+        if (!is_null($request->get('day'))) {
+            $manager = $this->getDoctrine()->getManager();
+
+            $clinic = $this->specialistService->getClinic($request->get('clinicId'));
+
+            $workHours = $this->specialistService->getWorkHours($user->getId(), $clinic[0]->getId());
+            foreach ($workHours as $workHour) { //ismetam visus laikus
+                $manager->remove($workHour);
+            }
+            foreach ($request->get('day') as $key => $day) {
+                //praskipinam jeigu nieko neideta, kad nesugeneruotu default laiku
+                if ($day['startTime'] == "" || $day['endTime'] == "") {
+                    continue;
+                }
+                $workHours = new SpecialistWorkHours(); //sudedam naujus laikus
+                $workHours->setClinicId($clinic[0]);
+                $workHours->setSpecialistId($user);
+                $workHours->setDay($key);
+                $workHours->setStartTime(new DateTime($day['startTime']));
+                $workHours->setEndTime(new DateTime($day['endTime']));
+
+                $manager->persist($workHours);
+            }
+            $manager->flush();
+            $this->bag->add('success', 'Grafikas išsaugotas.');
+        }
+        return new RedirectResponse($urlGenerator->generate('specialist'));
     }
 
     /**
@@ -182,25 +178,21 @@ class SpecialistController extends AbstractController
      */
     public function edit(Request $request, UrlGeneratorInterface $urlGenerator, UserInterface $user = null)
     {
-        if ($user instanceof User && $user->getRole() == 2) {
-            $specialtiesForm = $this->createSpecialistForm();
-            $specialtiesForm->handleRequest($request);
-
-            if ($specialtiesForm->isSubmitted() && $specialtiesForm->isValid()) {
-                $responseData = $request->request->get('form');
-                $this->userSpecialtyService->addSpecialty(
-                    $responseData['specialties'],
-                    //                    $responseData['custom_specialty'],
-                    $user
-                );
-            }
-
-//            return $this->render('specialist/edit.html.twig', [
-//                'specialtiesForm' => $specialtiesForm->createView(),
-//            ]);
-            return new RedirectResponse($urlGenerator->generate('userinfo_edit'));
+        if (!$this->userAuthService->isSpecialist($user)) {
+            return new RedirectResponse($urlGenerator->generate('app_login'));
         }
-        return new RedirectResponse($urlGenerator->generate('app_login'));
+
+        $specialtiesForm = $this->createSpecialistForm();
+        $specialtiesForm->handleRequest($request);
+
+        if ($specialtiesForm->isSubmitted() && $specialtiesForm->isValid()) {
+            $responseData = $request->request->get('form');
+            $this->userSpecialtyService->addSpecialty(
+                $responseData['specialties'],
+                $user
+            );
+        }
+        return new RedirectResponse($urlGenerator->generate('userinfo_edit'));
     }
 
     /**
@@ -241,7 +233,6 @@ class SpecialistController extends AbstractController
                 'choices' => $choices,
                 'required' => false,
             ])
-//            ->add('custom_specialty', TextType::class, ['required' => false])
             ->add('submit', SubmitType::class, ['label' => 'Prideti'])
             ->getForm();
 
@@ -263,7 +254,9 @@ class SpecialistController extends AbstractController
         UrlGeneratorInterface $urlGenerator,
         UserInterface $user = null
     ) {
-        if ($user instanceof User and $user->getRole() != 3) {
+        if (!$this->userAuthService->isPatient($user)) {
+            throw new NotFoundHttpException('Į vizitus gali registruotis tik pacientai.');
+        } else {
             $manager = $this->getDoctrine()->getManager();
             $reqInfo = explode(';', $request->get('reg_time'));
             $specialist = $this->specialistService->getSpecialist($specialistId);
@@ -297,8 +290,6 @@ class SpecialistController extends AbstractController
             $this->bag->add('success', 'Užregistruota sėkmingai');
 
             return new RedirectResponse($urlGenerator->generate('specialist_show', ['id' => $specialist[0]->getId()]));
-        } else {
-            throw new NotFoundHttpException('Klinikos negali registruotis į vizitus');
         }
     }
 }

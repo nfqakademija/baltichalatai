@@ -56,20 +56,19 @@ class UserVisitController extends AbstractController
         UserVisit $userVisit,
         UserInterface $user
     ) {
-        if ($user->getId() == $userVisit->getClientId()->getId()) {
+        if ($user instanceof User && $user->getId() == $userVisit->getClientId()->getId()) {
             $em = $this->getDoctrine()->getManager();
             $em->remove($userVisit);
             $em->flush();
-
+            $this->bag->add('success', 'Vizitas buvo atšauktas.');
             return new RedirectResponse($this->urlGenerator->generate('patient'));
-        } elseif ($user->getId() == $userVisit->getSpecialistId()->getId()) {
+        } elseif ($user instanceof User && $user->getId() == $userVisit->getSpecialistId()->getId()) {
             $em = $this->getDoctrine()->getManager();
             $em->remove($userVisit);
             $em->flush();
-
+            $this->bag->add('success', 'Vizitas buvo atšauktas.');
             return new RedirectResponse($this->urlGenerator->generate('specialist'));
         }
-        $this->bag->add('success', 'Vizitas buvo atšauktas.');
         return new RedirectResponse($this->urlGenerator->generate('app_login'));
     }
 

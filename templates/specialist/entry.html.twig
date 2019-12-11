@@ -10,7 +10,8 @@
                         <a href="#"><img src="/images/profile-avatar.png" alt="" title=""></a>
                         <h2>{{ userInfo.getName() }} {{ userInfo.getSurname() }}</h2>
                         {% for specialty in app.user.getUserSpecialties() %}
-                            <span class="badge badge-info">{{ specialty.getSpecialtyId().getName() }}</span>
+                            <a href="/search?specialties={{ specialty.getSpecialtyId.getId() }}"><span
+                                        class="badge badge-info">{{ specialty.getSpecialtyId().getName() }}</span></a>
                         {% endfor %}
                         {% for clinic in app.user.getSpecialistClinics() %}
                             {% if clinic.getClinicId.getRole() != 4 %}

@@ -6,6 +6,7 @@ use App\Entity\Specialty;
 use App\Entity\User;
 use App\Entity\UserInfo;
 use App\Form\UserInfoType;
+use App\Services\UserAuthService;
 use App\Services\UserInfoService;
 use App\Services\UserSpecialtyService;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
@@ -34,20 +35,27 @@ class UserInfoController extends AbstractController
      * @var UserSpecialtyService
      */
     private $userSpecialtyService;
+    /**
+     * @var UserAuthService
+     */
+    private $userAuthService;
 
     /**
      * UserInfoController constructor.
      * @param UserInfoService $userInfoService
      * @param FlashBagInterface $bag
      * @param UserSpecialtyService $userSpecialtyService
+     * @param UserAuthService $userAuthService
      */
     public function __construct(
         UserInfoService $userInfoService,
         FlashBagInterface $bag,
-        UserSpecialtyService $userSpecialtyService
+        UserSpecialtyService $userSpecialtyService,
+        UserAuthService $userAuthService
     ) {
         $this->userInfoService = $userInfoService;
         $this->userSpecialtyService = $userSpecialtyService;
+        $this->userAuthService = $userAuthService;
         $this->bag = $bag;
     }
 
@@ -60,7 +68,8 @@ class UserInfoController extends AbstractController
      */
     public function edit(Request $request, UrlGeneratorInterface $urlGenerator, UserInterface $user = null)
     {
-        if ($user instanceof User && ($user->getRole() == 2 || $user->getRole() == 1)) {
+        if ($this->userAuthService->isSpecialist($user) ||
+            $this->userAuthService->isPatient($user)) {
             $userInfo = $user->getUserInfo()->first();
             if ($userInfo == false) {
                 $userInfo = new UserInfo();
